@@ -75,7 +75,7 @@ def cmd_init(
         cfg = config.PreviewKitConfig(
             project_name=project_name,
             project_prefix=project_prefix,
-            host_pattern="{slug}.dev.khanpikehome.com",
+            host_pattern="{slug}.{project_prefix}.{domain}",
             compose_file="compose.worktree.yml",
             health_path="/api/health",
             base="main",
