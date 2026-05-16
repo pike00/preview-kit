@@ -1,0 +1,5 @@
+[release-kit]
+project_name = "preview-kit"
+project_description = "Per-worktree dev stack recipes: shared preview.just + preview-kit.toml convention for isolated git worktree stacks."
+branch = "main"
+changelog_path = "CHANGELOG.md"

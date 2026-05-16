@@ -1,0 +1,48 @@
+# preview-kit.toml — per-repo config for the shared preview-kit recipes.
+# Copy this file to your repo root as preview-kit.toml and fill in the values.
+# Then add to your justfile:
+#   import 'preview.just'   (absolute symlink → ~/projects/_templates/preview.just)
+
+[preview-kit]
+# Human-readable project name (unused by scripts, for documentation only).
+project_name = "my-project"
+
+# Prefix for COMPOSE_PROJECT_NAME. The running name is <project_prefix>-<slug>.
+# Keep it short and unique across your homelab.
+project_prefix = "myproj"
+
+# URL template for the preview host. {slug} = worktree directory name.
+# {domain} is read from main repo's .env DOMAIN= line (default: khanpikehome.com).
+# To hard-code the domain (skipping .env lookup), omit {domain}:
+#   host_pattern = "{slug}.my-project.khanpikehome.com"
+host_pattern = "{slug}.my-project.{domain}"
+
+# Docker Compose file that defines the worktree stack.
+compose_file = "compose.worktree.yml"
+
+# HTTP path that returns 200 when the stack is healthy. Used by `just pr`.
+health_path = "/api/health"
+
+# Base branch for commit counting and PR --base. Read by `just pr`.
+base = "main"
+
+# Service name for `just shell` (opens an interactive bash session).
+shell_service = "app"
+
+# Service name for `just pytest`. Defaults to shell_service if omitted.
+# test_service = "app"
+
+# Command to run inside test_service for `just pytest [args]`.
+# Examples: "pytest", "uv run pytest", "python -m pytest"
+test_command = "pytest"
+
+# Port base values. The shared env recipe applies a deterministic per-slug
+# offset (sha1(slug)[:4] mod 1000) to each base, ensuring no collisions
+# between simultaneous worktrees.
+#
+# Key names become the exported env var names (e.g. APP_PORT, DB_PORT).
+# These are referenced by compose.worktree.yml via ${APP_PORT}, ${DB_PORT}, etc.
+# Omit this section entirely if the stack publishes no host ports.
+[preview-kit.ports]
+APP_PORT = 18000
+DB_PORT = 15432
