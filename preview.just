@@ -3,6 +3,25 @@
 #   import 'preview.just'   (via absolute symlink → _templates/preview.just)
 # Requires preview-kit.toml at the repo root.
 #
+# SLUG derivation:
+#   - From a linked worktree (.worktrees/<name>): SLUG = <name>.
+#   - From the main worktree (the main clone): SLUG = "main".
+#   The main-clone pin prevents the basename of the project from leaking into
+#   labels and colliding with the prod stack's Traefik router (which is
+#   typically named after the project).
+#
+# Router-name contract (enforced by `up`):
+#   Every traefik.http.{routers,services,middlewares}.<name> label in the
+#   rendered compose MUST contain SLUG as a substring. Use ${COMPOSE_PROJECT_NAME}
+#   or ${SLUG} in compose.worktree.yml label names. Violations abort `up`
+#   before any container starts — without this, a preview can register a
+#   router named the same as prod, Traefik refuses to choose between the
+#   two definitions, and BOTH routes start 404'ing.
+#
+# DNS pre-flight (enforced by `up`):
+#   $WORKTREE_HOST must resolve before the stack starts. Catches host_pattern
+#   typos and missing per-project wildcards.
+#
 # Recipes provided:
 #   init         — interactive setup (creates preview-kit.toml, symlink, imports)
 #   env          — print worktree env vars (SLUG, COMPOSE_PROJECT_NAME, WORKTREE_HOST, ports, PREVIEW_*)
@@ -34,7 +53,18 @@ env:
     toplevel = subprocess.check_output(
         ["git", "rev-parse", "--show-toplevel"], text=True
     ).strip()
-    slug = os.path.basename(toplevel)
+    # Detect whether we're in the main worktree or a linked one. In the main
+    # worktree git_dir == git_common_dir; in a linked worktree git_dir lives
+    # under <main>/.git/worktrees/<name>. Pin SLUG="main" for the main clone
+    # so a preview brought up from there can't accidentally produce labels
+    # that collide with a prod stack named after the project basename.
+    git_dir = os.path.realpath(subprocess.check_output(
+        ["git", "rev-parse", "--git-dir"], text=True
+    ).strip())
+    git_common_dir = os.path.realpath(subprocess.check_output(
+        ["git", "rev-parse", "--git-common-dir"], text=True
+    ).strip())
+    slug = os.path.basename(toplevel) if git_dir != git_common_dir else "main"
 
     h = hashlib.sha1(slug.encode()).hexdigest()
     offset = int(h[:4], 16) % 1000
@@ -101,6 +131,30 @@ up:
         esac
     done < <(just env)
     echo
+
+    # Pre-flight: DNS for WORKTREE_HOST. Catches typos in host_pattern and
+    # missing per-project wildcards (e.g. *.kindred.khanpikehome.com when the
+    # site has only a single-level *.khanpikehome.com wildcard).
+    echo "▶ DNS check for $WORKTREE_HOST..."
+    if ! dig +short +time=2 +tries=1 "$WORKTREE_HOST" | grep -q .; then
+        echo "✗ '$WORKTREE_HOST' does not resolve." >&2
+        echo "  Add a DNS record (or a wildcard CNAME covering it) before retrying." >&2
+        exit 1
+    fi
+    echo "  ✓ $(dig +short "$WORKTREE_HOST" | head -1)"
+
+    # Pre-flight: every traefik.http.{routers,services,middlewares} label must
+    # embed SLUG. This is the router-name contract — without it a main-clone
+    # preview can register a Traefik router with the same name as the prod
+    # stack, Traefik refuses to choose between the two and disables both,
+    # 404'ing prod. The check operates on `docker compose config --format json`,
+    # so labels using ${SLUG} or ${COMPOSE_PROJECT_NAME} naturally pass.
+    violations="$(docker compose -f "$PREVIEW_COMPOSE_FILE" config --format json 2>/dev/null | jq -r --arg slug "$SLUG" '[.services | to_entries[] | .key as $svc | (.value.labels // {}) | to_entries[] | select(.key | startswith("traefik.http.")) | (.key | split(".")) as $p | select(($p|length) >= 4 and ($p[2] | IN("routers","services","middlewares")))| select($p[3] | contains($slug) | not) | "    service=\($svc) kind=\($p[2]) name=\($p[3])"] | unique | .[]')"
+    if [ -n "$violations" ]; then
+        printf '✗ preview-kit router-name contract violation:\n  every traefik.http.{routers,services,middlewares}.<name> label must embed SLUG=%s\n%s\n  Rename in compose.worktree.yml to include ${COMPOSE_PROJECT_NAME} or ${SLUG}.\n' "$SLUG" "$violations" >&2
+        exit 1
+    fi
+
     echo "▶ building images and starting containers..."
     docker compose -f "$PREVIEW_COMPOSE_FILE" up -d --build
     echo
