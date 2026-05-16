@@ -1,0 +1,62 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "preview-kit"
+version = "0.1.0"
+description = "Per-worktree dev stack manager: init, up/down, health, PR creation"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.14"
+authors = [{ name = "Will Pike", email = "pypi-public@wpike.com" }]
+dependencies = [
+    "pydantic>=2.13",
+    "tomlkit>=0.15.0",
+    "typer>=0.12",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Software Development :: Build Tools",
+    "Typing :: Typed",
+]
+
+[project.scripts]
+preview-kit = "preview_kit.cli:app"
+
+[project.urls]
+Homepage = "https://github.com/pike00/preview-kit"
+Source = "https://github.com/pike00/preview-kit"
+Issues = "https://github.com/pike00/preview-kit/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/preview_kit"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0",
+    "pytest-cov>=4.0",
+    "ruff>=0.1",
+    "mypy>=1.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v --cov=preview_kit --cov-report=term-missing"
+
+[tool.coverage.run]
+branch = true
+source = ["preview_kit"]
+
+[tool.ruff]
+target-version = "py314"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
