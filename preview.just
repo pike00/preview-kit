@@ -4,6 +4,7 @@
 # Requires preview-kit.toml at the repo root.
 #
 # Recipes provided:
+#   init         — interactive setup (creates preview-kit.toml, symlink, imports)
 #   env          — print worktree env vars (SLUG, COMPOSE_PROJECT_NAME, WORKTREE_HOST, ports, PREVIEW_*)
 #   up           — bring the worktree stack up (builds images, prints URL)
 #   down         — stop containers, keep volumes
@@ -15,6 +16,10 @@
 #   worktree <slug>    — create/resume .worktrees/<slug> and `just up`
 #   worktree-rm <slug> — `just down-clean` and remove the worktree
 #   pr           — push branch, wait for health, create draft GitHub PR
+
+# Initialize preview-kit in this repo (interactive setup).
+init:
+    {{ justfile_directory() }}/bin/preview-kit-init
 
 # Print the env vars this worktree resolves to.
 # Reads preview-kit.toml via Python's stdlib tomllib (Python 3.11+).
