@@ -43,69 +43,98 @@ def _prompt(text: str, default: str | None = None) -> str:
 
 
 @app.command("init")
-def cmd_init() -> None:
+def cmd_init(
+    force: Annotated[
+        bool, typer.Option("--force", "-f", help="Overwrite existing config with defaults")
+    ] = False,
+) -> None:
     """Interactive setup: symlink preview.just, create preview-kit.toml, update justfile."""
     try:
         repo_root = config.repo_root()
     except config.ConfigError as exc:
         _die(str(exc))
 
-    # Check for conflicts
-    if (repo_root / "preview-kit.toml").exists():
-        _die("preview-kit.toml already exists. Remove it first to reinitialize.")
-    if (repo_root / "preview.just").exists() or (repo_root / "preview.just").is_symlink():
-        _die("preview.just already exists. Remove it first to reinitialize.")
+    # Check for conflicts (unless --force)
+    if not force:
+        if (repo_root / "preview-kit.toml").exists():
+            _die(
+                "preview-kit.toml already exists. Use --force to overwrite or remove it first."
+            )
+        if (repo_root / "preview.just").exists() or (repo_root / "preview.just").is_symlink():
+            _die("preview.just already exists. Use --force to overwrite or remove it first.")
 
     typer.echo("\n=== preview-kit init ===\n")
 
-    # Gather config interactively
-    project_name = _prompt("Project name", "MyProject")
-    project_prefix = _prompt("Project prefix (short, unique)", "myproj")
-    host_pattern = _prompt(
-        "Host pattern ({slug}, {domain})",
-        "{slug}.{project_name}.{domain}",
-    )
-    compose_file = _prompt("Compose file", "compose.worktree.yml")
-    health_path = _prompt("Health check path", "/api/health")
-    base = _prompt("Base branch", "main")
-    shell_service = _prompt("Shell service name", "app")
-    test_service = _prompt("Test service name (or leave blank for shell_service)", "")
-    if not test_service:
-        test_service = shell_service
-    test_command = _prompt("Test command", "pytest")
+    # If --force, use defaults based on project directory name
+    if force:
+        project_name = repo_root.name.title()
+        project_prefix = repo_root.name.lower()
+        defaults_msg = f"(using defaults from directory '{repo_root.name}')"
+        typer.echo(f"Initializing with defaults {defaults_msg}\n")
 
-    # Ports (optional)
-    define_ports = typer.confirm("Define port mappings?", default=False)
-    ports: dict[str, int] = {}
-    if define_ports:
-        typer.echo("(Ports get a per-slug offset; these are base values)")
-        while True:
-            port_name = typer.prompt("Port name (e.g. APP_PORT) [or press Enter to skip]").strip()
-            if not port_name:
-                break
-            port_base = typer.prompt(f"Base port for {port_name}", type=int)
-            ports[port_name] = port_base
+        cfg = config.PreviewKitConfig(
+            project_name=project_name,
+            project_prefix=project_prefix,
+            host_pattern="{slug}.dev.khanpikehome.com",
+            compose_file="compose.worktree.yml",
+            health_path="/api/health",
+            base="main",
+            shell_service="app",
+            test_service="app",
+            test_command="pytest",
+            ports={},
+        )
+    else:
+        # Gather config interactively
+        project_name = _prompt("Project name", "MyProject")
+        project_prefix = _prompt("Project prefix (short, unique)", "myproj")
+        host_pattern = _prompt(
+            "Host pattern ({slug}, {domain})",
+            "{slug}.{project_name}.{domain}",
+        )
+        compose_file = _prompt("Compose file", "compose.worktree.yml")
+        health_path = _prompt("Health check path", "/api/health")
+        base = _prompt("Base branch", "main")
+        shell_service = _prompt("Shell service name", "app")
+        test_service = _prompt("Test service name (or leave blank for shell_service)", "")
+        if not test_service:
+            test_service = shell_service
+        test_command = _prompt("Test command", "pytest")
 
-    # Build config
-    cfg = config.PreviewKitConfig(
-        project_name=project_name,
-        project_prefix=project_prefix,
-        host_pattern=host_pattern,
-        compose_file=compose_file,
-        health_path=health_path,
-        base=base,
-        shell_service=shell_service,
-        test_service=test_service,
-        test_command=test_command,
-        ports=ports,
-    )
+        # Ports (optional)
+        define_ports = typer.confirm("Define port mappings?", default=False)
+        ports: dict[str, int] = {}
+        if define_ports:
+            typer.echo("(Ports get a per-slug offset; these are base values)")
+            while True:
+                port_name = typer.prompt(
+                    "Port name (e.g. APP_PORT) [or press Enter to skip]"
+                ).strip()
+                if not port_name:
+                    break
+                port_base = typer.prompt(f"Base port for {port_name}", type=int)
+                ports[port_name] = port_base
+
+        # Build config
+        cfg = config.PreviewKitConfig(
+            project_name=project_name,
+            project_prefix=project_prefix,
+            host_pattern=host_pattern,
+            compose_file=compose_file,
+            health_path=health_path,
+            base=base,
+            shell_service=shell_service,
+            test_service=test_service,
+            test_command=test_command,
+            ports=ports,
+        )
 
     # Find preview-kit directory (where this script is)
     preview_kit_path = Path(__file__).parent.parent.parent  # src/preview_kit -> src -> preview-kit
 
     # Execute init
     try:
-        init.init(repo_root, preview_kit_path, cfg, sys.stdout)
+        init.init(repo_root, preview_kit_path, cfg, sys.stdout, force=force)
     except init.InitError as exc:
         _die(str(exc))
 

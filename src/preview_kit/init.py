@@ -13,13 +13,15 @@ class InitError(Exception):
     """Initialization error."""
 
 
-def symlink_preview_just(repo_root: Path, preview_kit_path: Path) -> None:
+def symlink_preview_just(repo_root: Path, preview_kit_path: Path, force: bool = False) -> None:
     """Create symlink to preview.just in repo root."""
     link_path = repo_root / "preview.just"
     target = preview_kit_path / "preview.just"
 
     if link_path.exists() or link_path.is_symlink():
-        raise InitError(f"preview.just already exists at {link_path}")
+        if not force:
+            raise InitError(f"preview.just already exists at {link_path}")
+        link_path.unlink()
 
     if not target.exists():
         raise InitError(f"preview.just not found at {target}")
@@ -27,10 +29,10 @@ def symlink_preview_just(repo_root: Path, preview_kit_path: Path) -> None:
     link_path.symlink_to(target)
 
 
-def write_config(repo_root: Path, cfg: config.PreviewKitConfig) -> None:
+def write_config(repo_root: Path, cfg: config.PreviewKitConfig, force: bool = False) -> None:
     """Write preview-kit.toml to repo root."""
     config_path = repo_root / "preview-kit.toml"
-    if config_path.exists():
+    if config_path.exists() and not force:
         raise InitError(f"preview-kit.toml already exists at {config_path}")
 
     lines = [
@@ -84,16 +86,17 @@ def init(
     preview_kit_path: Path,
     cfg: config.PreviewKitConfig,
     out: IO[str],
+    force: bool = False,
 ) -> None:
     """Execute the full init flow."""
     out.write("\n=== preview-kit init ===\n\n")
 
     try:
         out.write("Creating symlink to preview.just...\n")
-        symlink_preview_just(repo_root, preview_kit_path)
+        symlink_preview_just(repo_root, preview_kit_path, force=force)
 
         out.write("Writing preview-kit.toml...\n")
-        write_config(repo_root, cfg)
+        write_config(repo_root, cfg, force=force)
 
         out.write("Updating justfile...\n")
         added = update_justfile(repo_root)
