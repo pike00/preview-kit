@@ -28,7 +28,7 @@ echo
 # Gather config
 read -rp "Project name (e.g. 'Kindred'): " project_name
 read -rp "Project prefix (short, e.g. 'kindred'): " project_prefix
-read -rp "Host pattern (e.g. '{slug}.dev.khanpikehome.com' or '{slug}.my-project.{domain}'): " host_pattern
+read -rp "Host pattern (e.g. '{slug}.preview.example.com' or '{slug}.my-project.{domain}'): " host_pattern
 read -rp "Health check path (e.g. '/health' or '/api/health'): " health_path
 read -rp "Base branch (default: main): " base
 base="${base:-main}"
