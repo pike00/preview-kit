@@ -1,10 +1,13 @@
-set shell := ["bash", "-cu"]
+set shell := ["bash", "-uc"]
 
-# preview-kit dogfoods its own release flow.
+# `release` / `version` / changelog recipes come from release.just (shared).
+
 import 'release.just'
 
 default:
     @just --list
+
+# preview-kit dogfoods its own release flow.
 
 # Validate that preview.just parses and all recipes are listed
 check:
