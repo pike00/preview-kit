@@ -112,7 +112,7 @@ def init(
         out.write("2. Test the setup:\n")
         out.write("   preview-kit env     # verify env vars\n")
         out.write("   just worktree <slug>    # create test worktree\n")
-        out.write("   just up             # bring up the stack\n\n")
+        out.write("   just dev            # bring up the stack\n\n")
         out.write(f"3. Review preview-kit.toml in {repo_root}\n\n")
 
     except InitError as exc:

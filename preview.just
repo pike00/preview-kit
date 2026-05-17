@@ -5,10 +5,11 @@
 #
 # SLUG derivation:
 #   - From a linked worktree (.worktrees/<name>): SLUG = <name>.
-#   - From the main worktree (the main clone): SLUG = "main".
-#   The main-clone pin prevents the basename of the project from leaking into
-#   labels and colliding with the prod stack's Traefik router (which is
-#   typically named after the project).
+#   - From the main clone: SLUG = current git branch name (sanitized for
+#     subdomain use: "/" and "_" → "-"). This gives every branch its own
+#     FQDN at <branch>.<project>.<domain> without requiring a worktree dir.
+#   The slug is rejected if it equals project_prefix — that would collide
+#   with the prod Traefik router (typically named after the project).
 #
 # Router-name contract (enforced by `up`):
 #   Every traefik.http.{routers,services,middlewares}.<name> label in the
@@ -25,14 +26,17 @@
 # Recipes provided:
 #   init         — interactive setup (creates preview-kit.toml, symlink, imports)
 #   env          — print worktree env vars (SLUG, COMPOSE_PROJECT_NAME, WORKTREE_HOST, ports, PREVIEW_*)
-#   up           — bring the worktree stack up (builds images, prints URL)
+#   dev          — bring the worktree stack up (builds images, prints URL)
+#                   Threads GIT_HASH + APP_VERSION as build args so Dockerfiles
+#                   that declare `ARG GIT_HASH` / `ARG APP_VERSION` see the
+#                   real values (used by the version-in-footer convention).
 #   down         — stop containers, keep volumes
 #   down-clean   — stop containers AND delete volumes
 #   logs [svc]   — tail compose logs
 #   ps           — show stack container status
 #   shell        — exec bash in the shell_service container
 #   pytest [...]  — run pytest in the test_service container
-#   worktree <slug>    — create/resume .worktrees/<slug> and `just up`
+#   worktree <slug>    — create/resume .worktrees/<slug> and `just dev`
 #   worktree-rm <slug> — `just down-clean` and remove the worktree
 #   pr           — push branch, wait for health, create draft GitHub PR
 
@@ -55,16 +59,24 @@ env:
     ).strip()
     # Detect whether we're in the main worktree or a linked one. In the main
     # worktree git_dir == git_common_dir; in a linked worktree git_dir lives
-    # under <main>/.git/worktrees/<name>. Pin SLUG="main" for the main clone
-    # so a preview brought up from there can't accidentally produce labels
-    # that collide with a prod stack named after the project basename.
+    # under <main>/.git/worktrees/<name>.
     git_dir = os.path.realpath(subprocess.check_output(
         ["git", "rev-parse", "--git-dir"], text=True
     ).strip())
     git_common_dir = os.path.realpath(subprocess.check_output(
         ["git", "rev-parse", "--git-common-dir"], text=True
     ).strip())
-    slug = os.path.basename(toplevel) if git_dir != git_common_dir else "main"
+    if git_dir != git_common_dir:
+        slug = os.path.basename(toplevel)
+    else:
+        # Main clone: derive slug from the current branch so each branch gets
+        # its own FQDN at <branch>.<project>.<domain> without needing a
+        # separate worktree dir. Detached HEAD falls back to "main".
+        branch = subprocess.run(
+            ["git", "symbolic-ref", "--short", "HEAD"],
+            capture_output=True, text=True, check=False,
+        ).stdout.strip() or "main"
+        slug = branch.replace("/", "-").replace("_", "-")
 
     h = hashlib.sha1(slug.encode()).hexdigest()
     offset = int(h[:4], 16) % 1000
@@ -82,6 +94,12 @@ env:
                 break
 
     prefix = cfg["project_prefix"]
+    if slug == prefix:
+        raise SystemExit(
+            f"refuses to use slug={slug!r}: equals project_prefix, "
+            f"would collide with prod Traefik router. Switch branches or "
+            f"rename project_prefix in preview-kit.toml."
+        )
     host = cfg["host_pattern"].replace("{slug}", slug).replace("{domain}", domain)
 
     print(f"SLUG={slug}")
@@ -98,8 +116,11 @@ env:
     for name, base in cfg.get("ports", {}).items():
         print(f"{name}={base + offset}")
 
-# Bring the worktree stack up. Symlinks .env from the main repo if missing.
-up:
+# Threads GIT_HASH + APP_VERSION as env vars so compose files can pass them
+# as build args (web UIs use this for the "v0.4.2 · a8f3c21" footer).
+# Symlinks .env from the main repo if missing.
+# Bring the worktree dev stack up at https://<slug>.<project>.<domain>.
+dev:
     #!/usr/bin/env bash
     set -euo pipefail
     toplevel="$(git rev-parse --show-toplevel)"
@@ -107,12 +128,17 @@ up:
     [ -f .env ] || ln -s "$main_repo/.env" .env
     set -a; . ./.env; set +a
     eval "$(just env | sed 's/^/export /')"
+    # Version-in-footer convention: expose GIT_HASH + APP_VERSION for compose
+    # build args. Dockerfiles consume them with `ARG GIT_HASH` / `ARG APP_VERSION`.
+    export GIT_HASH="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
+    export APP_VERSION="$(git describe --tags --abbrev=0 2>/dev/null || echo dev)"
     branch="$(git symbolic-ref --short HEAD 2>/dev/null || echo 'detached')"
     head_line="$(git log -1 --format='%h %s' 2>/dev/null || echo 'unknown')"
     dirty="$(git status --porcelain 2>/dev/null | wc -l | tr -d ' ')"
     echo "▶ project:  $COMPOSE_PROJECT_NAME"
     echo "  branch:   $branch"
     echo "  HEAD:     $head_line"
+    echo "  version:  $APP_VERSION · $GIT_HASH"
     if [ "$dirty" -gt 0 ]; then
         echo "  dirty:    $dirty file(s) uncommitted"
     fi
@@ -236,7 +262,7 @@ worktree slug:
         echo
     fi
     cd "$wt_path"
-    just up
+    just dev
     eval "$(just env | sed 's/^/export /')"
     echo
     echo "▶ Starting on https://$WORKTREE_HOST"
@@ -257,7 +283,7 @@ worktree-rm slug:
 
 # Push branch, wait for stack health check, create a draft GitHub PR.
 # Skips PR creation if no commits ahead of base branch (prints URL and exits 0).
-# Requires: stack already up via `just up`, gh CLI authenticated.
+# Requires: stack already up via `just dev`, gh CLI authenticated.
 pr:
     #!/usr/bin/env bash
     set -euo pipefail

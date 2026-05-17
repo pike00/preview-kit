@@ -14,14 +14,14 @@ Importing `preview.just` into a repo's `justfile` adds 11 recipes:
 | Recipe | What it does |
 |---|---|
 | `env` | Print all worktree env vars (SLUG, COMPOSE_PROJECT_NAME, WORKTREE_HOST, ports, PREVIEW_*) |
-| `up` | Bring the worktree stack up — builds images, prints URL |
+| `dev` | Bring the worktree stack up at `<slug>.<project>.<domain>` — builds images, threads GIT_HASH + APP_VERSION |
 | `down` | Stop containers, keep volumes |
 | `down-clean` | Stop containers AND delete volumes |
 | `logs [svc]` | Tail compose logs |
 | `ps` | Show stack container status |
 | `shell` | Exec bash in the shell_service container |
 | `pytest [...]` | Run pytest in the test_service container |
-| `worktree <slug>` | Create/resume `.worktrees/<slug>` and `just up` |
+| `worktree <slug>` | Create/resume `.worktrees/<slug>` and `just dev` |
 | `worktree-rm <slug>` | `just down-clean` and remove the worktree |
 | `pr` | Push branch, wait for health, create draft GitHub PR |
 
