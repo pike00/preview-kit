@@ -125,8 +125,13 @@ dev:
     set -euo pipefail
     toplevel="$(git rev-parse --show-toplevel)"
     main_repo="$(dirname "$(git rev-parse --git-common-dir | xargs -I{} readlink -f {})")"
-    [ -f .env ] || ln -s "$main_repo/.env" .env
-    set -a; . ./.env; set +a
+    # In a linked worktree, symlink .env from the main clone if missing so
+    # secrets are managed in one place. NEVER do this from the main clone
+    # itself — that would create a .env → .env self-loop (ELOOP).
+    if [ "$toplevel" != "$main_repo" ] && [ ! -e .env ] && [ ! -L .env ] && [ -f "$main_repo/.env" ]; then
+        ln -s "$main_repo/.env" .env
+    fi
+    [ -f .env ] && { set -a; . ./.env; set +a; }
     eval "$(just env | sed 's/^/export /')"
     # Version-in-footer convention: expose GIT_HASH + APP_VERSION for compose
     # build args. Dockerfiles consume them with `ARG GIT_HASH` / `ARG APP_VERSION`.
